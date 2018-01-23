@@ -1,0 +1,4 @@
+--reporter spec
+servar-tests
+--recursive
+--growl
