@@ -176,4 +176,225 @@ server-tests
 ```
 上面代码指定运行server-tests目录及其子目录之中的测试脚本。
 ##### 八、ES6测试
+如果测试脚本是用ES6写的，那么运行测试之前，需要先用Babel转码。进入demo04目录，打开test/add.test.js文件，可以看到这个测试用例是用ES6写的。。
+```bash
+import add from '../src/add.js';
+import chai from 'chai';
+
+let expect = chai.expect;
+
+describe('加法函数的测试', function() {
+  it('1 加 1 应该等于 2', function() {
+    expect(add(1, 1)).to.be.equal(2);
+  });
+});
+```
+ES6转码，需要安装Babel。
+```bash
+$ npm install babel-core babel-preset-es2015 --save-dev
+```
+然后，在项目目录下面，新建一个.babelrc配置文件。
+```bash
+{
+  "presets": [ "es2015" ]
+}
+```
+最后，使用--compilers参数指定测试脚本的转码器。
+```bash
+$ ../node_modules/mocha/bin/mocha --compilers js:babel-core/register
+```
+上面代码中，--compilers参数后面紧跟一个用冒号分隔的字符串，冒号左边是文件的后缀名，右边是用来处理这一类文件的模块名。上面代码表示，运行测试之前，先用babel-core/register模块，处理一下.js文件。由于这里的转码器安装在项目内，所以要使用项目内安装的Mocha；如果转码器安装在全局，就可以使用全局的Mocha。
+##### 九、异步测试
+Mocha默认每个测试用例最多执行2000毫秒，如果到时没有得到结果，就报错。对于涉及异步操作的测试用例，这个时间往往是不够的，需要用-t或--timeout参数指定超时门槛。
+
+进入demo05子目录，打开测试脚本timeout.test.js。
+```bash
+
+it('测试应该5000毫秒后结束', function(done) {
+  var x = true;
+  var f = function() {
+    x = false;
+    expect(x).to.be.not.ok;
+    done(); // 通知Mocha测试结束
+  };
+  setTimeout(f, 4000);
+});
+```
+上面的测试用例，需要4000毫秒之后，才有运行结果。所以，需要用-t或--timeout参数，改变默认的超时设置。
+```bash
+$ mocha -t 5000 timeout.test.js
+```
+上面命令将测试的超时时限指定为5000毫秒。
+另外，上面的测试用例里面，有一个done函数。it块执行的时候，传入一个done参数，当测试结束的时候，必须显式调用这个函数，告诉Mocha测试结束了。否则，Mocha就无法知道，测试是否结束，会一直等到超时报错。你可以把这行删除试试看。
+Mocha默认会高亮显示超过75毫秒的测试用例，可以用-s或--slow调整这个参数。
+```bash
+$ mocha -t 5000 -s 1000 timeout.test.js
+```
+上面命令指定高亮显示耗时超过1000毫秒的测试用例。
+下面是另外一个异步测试的例子async.test.js。
+```bash
+it('异步请求应该返回一个对象', function(done){
+  request
+    .get('https://api.github.com')
+    .end(function(err, res){
+      expect(res).to.be.an('object');
+      done();
+    });
+});
+```
+运行下面命令，可以看到这个测试会通过。
+```bash
+$ mocha -t 10000 async.test.js
+```
+另外，Mocha内置对Promise的支持，允许直接返回Promise，等到它的状态改变，再执行断言，而不用显式调用done方法。请看promise.test.js。
+```bash
+it('异步请求应该返回一个对象', function() {
+  return fetch('https://api.github.com')
+    .then(function(res) {
+      return res.json();
+    }).then(function(json) {
+      expect(json).to.be.an('object');
+    });
+});
+```
+##### 十、测试用例的钩子
+Mocha在describe块之中，提供测试用例的四个钩子：before()、after()、beforeEach()和afterEach()。它们会在指定时间执行。
+```bash
+describe('hooks', function() {
+
+  before(function() {
+    // 在本区块的所有测试用例之前执行
+  });
+
+  after(function() {
+    // 在本区块的所有测试用例之后执行
+  });
+
+  beforeEach(function() {
+    // 在本区块的每个测试用例之前执行
+  });
+
+  afterEach(function() {
+    // 在本区块的每个测试用例之后执行
+  });
+
+  // test cases
+});
+```
+进入demo06子目录，可以看到下面两个例子。首先是beforeEach的例子beforeEach.test.js。
+```bash
+// beforeEach.test.js
+describe('beforeEach示例', function() {
+  var foo = false;
+
+  beforeEach(function() {
+    foo = true;
+  });
+
+  it('修改全局变量应该成功', function() {
+    expect(foo).to.be.equal(true);
+  });
+});
+```
+上面代码中，beforeEach会在it之前执行，所以会修改全局变量。
+另一个例子beforeEach-async.test.js则是演示，如何在beforeEach之中使用异步操作。
+```bash
+// beforeEach-async.test.js
+describe('异步 beforeEach 示例', function() {
+  var foo = false;
+
+  beforeEach(function(done) {
+    setTimeout(function() {
+      foo = true;
+      done();
+    }, 50);
+  });
+
+  it('全局变量异步修改应该成功', function() {
+    expect(foo).to.be.equal(true);
+  });
+});
+```
+##### 十一、测试用例管理
+大型项目有很多测试用例。有时，我们希望只运行其中的几个，这时可以用only方法。describe块和it块都允许调用only方法，表示只运行某个测试套件或测试用例。
+进入demo07子目录，测试脚本test/add.test.js就使用了only。
+```bash
+it.only('1 加 1 应该等于 2', function() {
+  expect(add(1, 1)).to.be.equal(2);
+});
+
+it('任何数加0应该等于自身', function() {
+  expect(add(1, 0)).to.be.equal(1);
+});
+```
+上面代码中，只有带有only方法的测试用例会运行。
+```bash
+$ mocha test/add.test.js
+
+  加法函数的测试
+    ✓ 1 加 1 应该等于 2
+
+  1 passing (10ms)
+  ```
+  此外，还有skip方法，表示跳过指定的测试套件或测试用例。
+  ```bash
+  it.skip('任何数加0应该等于自身', function() {
+  expect(add(1, 0)).to.be.equal(1);
+});
+```
+上面代码的这个测试用例不会执行。
+##### 十二、浏览器测试
+除了在命令行运行，Mocha还可以在浏览器运行。
+![image](http://www.ruanyifeng.com/blogimg/asset/2015/bg2015120305.png)
+首先，使用mocha init命令在指定目录生成初始化文件。
+```bash
+$ mocha init demo08
+```
+运行上面命令，就会在demo08目录下生成index.html文件，以及配套的脚本和样式表。
+```bash
+<!DOCTYPE html>
+<html>
+  <body>
+    <h1>Unit.js tests in the browser with Mocha</h1>
+    <div id="mocha"></div>
+    <script src="mocha.js"></script>
+    <script>
+      mocha.setup('bdd');
+    </script>
+    <script src="tests.js"></script>
+    <script>
+      mocha.run();
+    </script>
+  </body>
+</html>
+```
+然后，新建一个源码文件add.js。
+```bash
+<script>
+  mocha.setup('bdd');
+</script>
+<script src="add.js"></script>
+<script src="http://chaijs.com/chai.js"></script>
+<script src="tests.js"></script>
+<script>
+  mocha.run();
+</script>
+```
+最后，在tests.js里面写入测试脚本。
+```bash
+var expect = chai.expect;
+
+describe('加法函数的测试', function() {
+  it('1 加 1 应该等于 2', function() {
+    expect(add(1, 1)).to.be.equal(2);
+  });
+
+  it('任何数加0等于自身', function() {
+    expect(add(1, 0)).to.be.equal(1);
+    expect(add(0, 0)).to.be.equal(0);
+  });
+});
+```
+现在，在浏览器里面打开index.html，就可以看到测试脚本的运行结果。
+##### 十三、生成规格文件
 未完待续。。。
